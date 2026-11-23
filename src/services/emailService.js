@@ -16,23 +16,29 @@ class EmailService {
       if (isGmail) {
         this.transporter = nodemailer.createTransport({
           service: 'gmail',
+          pool: true,
+          maxConnections: 3,
+          maxMessages: 100,
           auth: {
             user: process.env.SMTP_USER.trim(),
             pass: sanitizedPass
           }
         });
-        console.log('[EmailService] Configured with Gmail SMTP service for:', process.env.SMTP_USER);
+        console.log('[EmailService] Configured with pooled Gmail SMTP service for:', process.env.SMTP_USER);
       } else {
         this.transporter = nodemailer.createTransport({
           host: process.env.SMTP_HOST || 'smtp.gmail.com',
           port: parseInt(process.env.SMTP_PORT || '465', 10),
           secure: process.env.SMTP_PORT === '465',
+          pool: true,
+          maxConnections: 3,
+          maxMessages: 100,
           auth: {
             user: process.env.SMTP_USER.trim(),
             pass: sanitizedPass
           }
         });
-        console.log('[EmailService] Configured with custom SMTP server:', process.env.SMTP_HOST);
+        console.log('[EmailService] Configured with pooled custom SMTP server:', process.env.SMTP_HOST);
       }
     } else {
       // In dev mode without SMTP, create an ethereal test account or fallback to console simulation

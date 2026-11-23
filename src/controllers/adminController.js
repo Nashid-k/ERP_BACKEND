@@ -61,14 +61,26 @@ export const createUser = async (req, res, next) => {
     const rawInvitationToken = newUser.generateInvitationToken();
     await newUser.save();
 
-    // Send invitation email
-    const emailResult = await emailService.sendInvitationEmail({
-      user: newUser,
-      rawToken: rawInvitationToken
-    });
+    // Dispatch invitation email asynchronously in background (non-blocking)
+    emailService
+      .sendInvitationEmail({
+        user: newUser,
+        rawToken: rawInvitationToken
+      })
+      .then((emailResult) => {
+        logActivity({
+          action: 'INVITATION_SENT',
+          performedBy: req.user._id,
+          targetUser: newUser._id,
+          targetUserEmail: newUser.email,
+          details: { emailDelivered: emailResult.success },
+          req
+        }).catch((err) => console.error('[Background Audit Error]:', err.message));
+      })
+      .catch((err) => console.error('[Background Email Dispatch Error]:', err.message));
 
-    // Audit log
-    await logActivity({
+    // Audit user creation asynchronously in background
+    logActivity({
       action: 'USER_CREATED',
       performedBy: req.user._id,
       targetUser: newUser._id,
@@ -79,16 +91,7 @@ export const createUser = async (req, res, next) => {
         status: newUser.status
       },
       req
-    });
-
-    await logActivity({
-      action: 'INVITATION_SENT',
-      performedBy: req.user._id,
-      targetUser: newUser._id,
-      targetUserEmail: newUser.email,
-      details: { emailDelivered: emailResult.success },
-      req
-    });
+    }).catch((err) => console.error('[Background Audit Error]:', err.message));
 
     const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
     const invitationLink = `${clientUrl}/accept-invitation?token=${rawInvitationToken}&email=${encodeURIComponent(newUser.email)}`;
@@ -97,7 +100,6 @@ export const createUser = async (req, res, next) => {
       success: true,
       message: `User account created for ${newUser.email}. Invitation email dispatched successfully.`,
       user: newUser.toJSON(),
-      // Dev helper for quick testing
       invitationLink
     });
   } catch (error) {
@@ -556,18 +558,21 @@ export const resendInvitation = async (req, res, next) => {
     user.status = 'INVITED';
     await user.save();
 
-    await emailService.sendInvitationEmail({
-      user,
-      rawToken
-    });
+    // Non-blocking background email dispatch
+    emailService
+      .sendInvitationEmail({
+        user,
+        rawToken
+      })
+      .catch((err) => console.error('[Background Resend Email Error]:', err.message));
 
-    await logActivity({
+    logActivity({
       action: 'INVITATION_RESENT',
       performedBy: req.user._id,
       targetUser: user._id,
       targetUserEmail: user.email,
       req
-    });
+    }).catch((err) => console.error('[Background Audit Error]:', err.message));
 
     const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
     const invitationLink = `${clientUrl}/accept-invitation?token=${rawToken}&email=${encodeURIComponent(user.email)}`;

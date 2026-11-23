@@ -351,15 +351,18 @@ export const forgotPassword = async (req, res, next) => {
     const rawToken = user.generateResetPasswordToken();
     await user.save({ validateBeforeSave: false });
 
-    await emailService.sendPasswordResetEmail({ user, rawToken });
+    // Non-blocking background email dispatch
+    emailService
+      .sendPasswordResetEmail({ user, rawToken })
+      .catch((err) => console.error('[Background Reset Email Error]:', err.message));
 
-    await logActivity({
+    logActivity({
       action: 'PASSWORD_RESET_REQUESTED',
       performedBy: user._id,
       targetUser: user._id,
       targetUserEmail: user.email,
       req
-    });
+    }).catch((err) => console.error('[Background Audit Error]:', err.message));
 
     return res.status(200).json({
       success: true,
