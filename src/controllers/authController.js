@@ -308,13 +308,14 @@ export const verifyEmail = async (req, res, next) => {
       : `${localPart.slice(0, 1)}***`;
     const maskedEmail = `${maskedLocal}@${domain}`;
 
+    const isConfirmed = Boolean(email && String(email).trim().toLowerCase() === user.email.toLowerCase());
+
     return res.status(200).json({
       success: true,
       message: 'Token is valid.',
-      email: email ? user.email : maskedEmail,
-      isEmailConfirmed: !!email,
-      exactEmail: user.email,
-      name: user.name,
+      maskedEmail,
+      isEmailConfirmed: isConfirmed,
+      name: isConfirmed ? user.name : '',
       role: user.role
     });
   } catch (error) {

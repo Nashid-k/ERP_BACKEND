@@ -94,7 +94,7 @@ export const createUser = async (req, res, next) => {
     }).catch((err) => console.error('[Background Audit Error]:', err.message));
 
     const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
-    const invitationLink = `${clientUrl}/accept-invitation?token=${rawInvitationToken}&email=${encodeURIComponent(newUser.email)}`;
+    const invitationLink = `${clientUrl}/accept-invitation?token=${rawInvitationToken}`;
 
     return res.status(201).json({
       success: true,
@@ -575,7 +575,7 @@ export const resendInvitation = async (req, res, next) => {
     }).catch((err) => console.error('[Background Audit Error]:', err.message));
 
     const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
-    const invitationLink = `${clientUrl}/accept-invitation?token=${rawToken}&email=${encodeURIComponent(user.email)}`;
+    const invitationLink = `${clientUrl}/accept-invitation?token=${rawToken}`;
 
     return res.status(200).json({
       success: true,

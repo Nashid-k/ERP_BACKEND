@@ -234,7 +234,8 @@ class EmailService {
   // 1. Send Invitation Email
   async sendInvitationEmail({ user, rawToken }) {
     const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
-    const invitationUrl = `${clientUrl}/accept-invitation?token=${rawToken}&email=${encodeURIComponent(user.email)}`;
+    // Omit email parameter from URL to prevent email exposure and enforce mailbox ownership entry
+    const invitationUrl = `${clientUrl}/accept-invitation?token=${rawToken}`;
 
     const subject = 'Welcome to Talkism Private Limited – Your Staff ERP Account';
     const html = `
