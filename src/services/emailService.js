@@ -4,6 +4,33 @@ class EmailService {
   constructor() {
     this.transporter = null;
     this.initialized = false;
+    this.lastDelivery = {
+      timestamp: null,
+      to: null,
+      status: 'none',
+      provider: 'uninitialized',
+      error: null
+    };
+  }
+
+  getProviderName() {
+    if (process.env.RESEND_API_KEY) return 'Resend (HTTPS API - Port 443)';
+    if (process.env.BREVO_API_KEY) return 'Brevo (HTTPS API - Port 443)';
+    if (process.env.SMTP_USER && process.env.SMTP_PASS) return 'Gmail/Custom SMTP (Port 465/587)';
+    return 'Console / Simulation Mode';
+  }
+
+  getDiagnostics() {
+    return {
+      activeProvider: this.getProviderName(),
+      hasSmtpUser: Boolean(process.env.SMTP_USER),
+      hasSmtpPass: Boolean(process.env.SMTP_PASS),
+      hasResendKey: Boolean(process.env.RESEND_API_KEY),
+      hasBrevoKey: Boolean(process.env.BREVO_API_KEY),
+      renderFreeTierNotice:
+        'Render Free Tier blocks outbound ports 465 and 587. If using Render Free, set RESEND_API_KEY (free 3000 emails/mo at resend.com) which communicates over HTTPS port 443.',
+      lastDelivery: this.lastDelivery
+    };
   }
 
   async init() {
@@ -65,10 +92,109 @@ class EmailService {
   async sendMail({ to, subject, html, text }) {
     await this.init();
 
-    const from = process.env.SMTP_FROM || 'ERP System <no-reply@erp-system.local>';
+    // Provider 1: Resend HTTPS REST API (Port 443 - Bypasses Render's port 465/587 firewall)
+    if (process.env.RESEND_API_KEY) {
+      try {
+        const res = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${process.env.RESEND_API_KEY.trim()}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            from: process.env.SMTP_FROM || 'Talkism ERP <onboarding@resend.dev>',
+            to: [to],
+            subject,
+            html,
+            text
+          })
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+          console.log(`[EmailService Resend]: Dispatched message ${data.id} to ${to} over HTTPS`);
+          this.lastDelivery = {
+            timestamp: new Date().toISOString(),
+            to,
+            status: 'success',
+            provider: 'Resend (HTTPS API)',
+            messageId: data.id,
+            error: null
+          };
+          return { success: true, messageId: data.id, provider: 'resend' };
+        } else {
+          console.error('[EmailService Resend Error]:', data.message);
+          this.lastDelivery = {
+            timestamp: new Date().toISOString(),
+            to,
+            status: 'failed',
+            provider: 'Resend (HTTPS API)',
+            error: data.message
+          };
+        }
+      } catch (err) {
+        console.error('[EmailService Resend Network Error]:', err.message);
+      }
+    }
+
+    // Provider 2: Brevo HTTPS REST API (Port 443 - Bypasses Render's port 465/587 firewall)
+    if (process.env.BREVO_API_KEY) {
+      try {
+        const senderEmail = process.env.SMTP_USER || 'no-reply@talkism.com';
+        const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+          method: 'POST',
+          headers: {
+            'api-key': process.env.BREVO_API_KEY.trim(),
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            sender: { name: 'Talkism Private Limited', email: senderEmail },
+            to: [{ email: to }],
+            subject,
+            htmlContent: html,
+            textContent: text
+          })
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+          console.log(`[EmailService Brevo]: Dispatched message ${data.messageId} to ${to} over HTTPS`);
+          this.lastDelivery = {
+            timestamp: new Date().toISOString(),
+            to,
+            status: 'success',
+            provider: 'Brevo (HTTPS API)',
+            messageId: data.messageId,
+            error: null
+          };
+          return { success: true, messageId: data.messageId, provider: 'brevo' };
+        } else {
+          console.error('[EmailService Brevo Error]:', data.message);
+          this.lastDelivery = {
+            timestamp: new Date().toISOString(),
+            to,
+            status: 'failed',
+            provider: 'Brevo (HTTPS API)',
+            error: data.message
+          };
+        }
+      } catch (err) {
+        console.error('[EmailService Brevo Network Error]:', err.message);
+      }
+    }
+
+    // Provider 3: Traditional Nodemailer SMTP (Gmail or custom SMTP server)
+    const from = process.env.SMTP_FROM || 'Talkism Private Limited <no-reply@talkism.com>';
 
     if (!this.transporter) {
-      console.log(`[EmailService Delivery]: Dispatched "${subject}" to ${to} (Simulated / Development mode - Secrets suppressed).`);
+      console.log(`[EmailService Delivery]: Dispatched "${subject}" to ${to} (Simulated / Secrets suppressed).`);
+      this.lastDelivery = {
+        timestamp: new Date().toISOString(),
+        to,
+        status: 'simulated',
+        provider: 'Console Simulation',
+        error: null
+      };
       return { success: true, simulated: true };
     }
 
@@ -81,17 +207,26 @@ class EmailService {
         html
       });
 
-      console.log(`[EmailService Delivery]: Dispatched message ${info.messageId} to ${to}`);
-      const previewUrl = nodemailer.getTestMessageUrl(info);
-      if (previewUrl) {
-        console.log(`[EmailService]: Ethereal Preview URL: ${previewUrl}`);
-      }
+      console.log(`[EmailService SMTP Delivery]: Dispatched message ${info.messageId} to ${to}`);
+      this.lastDelivery = {
+        timestamp: new Date().toISOString(),
+        to,
+        status: 'success',
+        provider: 'Nodemailer SMTP',
+        messageId: info.messageId,
+        error: null
+      };
 
-      return { success: true, messageId: info.messageId, previewUrl };
+      return { success: true, messageId: info.messageId };
     } catch (error) {
-      console.error('[EmailService Delivery Error]:', error.message);
-      // Fallback log without body
-      console.log(`[EmailService Fallback]: To: ${to} | Subject: ${subject}`);
+      console.error('[EmailService SMTP Delivery Error]:', error.message);
+      this.lastDelivery = {
+        timestamp: new Date().toISOString(),
+        to,
+        status: 'failed',
+        provider: 'Nodemailer SMTP',
+        error: error.message
+      };
       return { success: false, error: error.message };
     }
   }

@@ -13,6 +13,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 import authRoutes from './routes/authRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import userRoutes from './routes/userRoutes.js';
+import emailService from './services/emailService.js';
 
 const app = express();
 
@@ -36,13 +37,14 @@ if (process.env.NODE_ENV !== 'test') {
   app.use(morgan('dev'));
 }
 
-// Health check endpoint
+// Health check and diagnostic endpoint
 app.get('/api/health', (req, res) => {
   res.status(200).json({
     status: 'online',
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
-    service: 'ERP User Management API'
+    service: 'ERP User Management API',
+    email: emailService.getDiagnostics()
   });
 });
 
